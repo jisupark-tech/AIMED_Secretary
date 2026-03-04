@@ -5,9 +5,14 @@ import { log } from "../utils/logger.js";
 export class ClaudeCodeProvider implements LLMProvider {
   name = "claude-code";
   private cliPath: string;
+  private cleanEnv: Record<string, string>;
 
   constructor(cliPath = "claude") {
     this.cliPath = cliPath;
+    // Remove CLAUDECODE env var to allow spawning from within a Claude Code session
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    this.cleanEnv = env as Record<string, string>;
   }
 
   async isAvailable(): Promise<boolean> {
@@ -47,7 +52,7 @@ export class ClaudeCodeProvider implements LLMProvider {
 
       const proc = spawn(this.cliPath, args, {
         stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env },
+        env: this.cleanEnv,
       });
 
       let stdout = "";
@@ -84,7 +89,7 @@ export class ClaudeCodeProvider implements LLMProvider {
 
     const proc = spawn(this.cliPath, args, {
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env: this.cleanEnv,
     });
 
     for await (const chunk of proc.stdout) {
