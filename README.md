@@ -1,34 +1,36 @@
 # AIMED Secretary
 
-A local-first AI secretary powered by Claude Code. Inspired by [OpenClaw](https://github.com/openclaw/openclaw) architecture.
+**AI-Managed Enterprise Dashboard** — A local-first AI secretary powered by Claude Code.
+Inspired by [OpenClaw](https://github.com/openclaw/openclaw) architecture.
 
 ## Architecture
 
 ```
-Discord / Telegram / Slack / CLI
-              |
-              v
-    +-------------------+
-    |     Gateway       |
-    |  (Message Router) |
-    +--------+----------+
-             |
-    +--------+----------+
-    |      Agent        |
-    |  (LLM + Skills)   |
-    +--------+----------+
-             |
-    +--------+----------+--------+
-    |        |           |       |
-  Claude   Ollama     Cron   Webhook
-  Code    (fallback)  Jobs   Server
-    |        |           |       |
-    +--------+----------+--------+
-             |
-    +-------------------+
-    |   Session Store   |
-    |     (SQLite)      |
-    +-------------------+
+Discord / Telegram / Slack / CLI / Dashboard
+                    |
+                    v
+          +-------------------+
+          |     Gateway       |
+          |  (Message Router) |
+          +--------+----------+
+                   |
+          +--------+----------+
+          |      Agent        |
+          |  (LLM + Skills)   |
+          +--------+----------+
+                   |
+    +--------------+---------------+
+    |        |         |           |
+  Claude   Ollama    Cron      Webhook
+  Code    (fallback) Jobs      Server
+    |        |         |           |
+    +--------+---------+-----------+
+                   |
+    +--------------+---------------+
+    |              |               |
+  Session     Knowledge        Voice
+  Store       Base (RAG)       Engine
+  (SQLite)                    (Whisper)
 ```
 
 ## Quick Start
@@ -39,11 +41,12 @@ npm install
 
 # Configure
 cp .env.example .env
-# Edit .env with your tokens (Discord, Telegram, Slack — all optional)
 
 # Run
 npm run dev
 ```
+
+Open **http://localhost:18791** for the web dashboard.
 
 ## LLM Providers
 
@@ -57,9 +60,10 @@ npm run dev
 | Channel | Setup | Trigger |
 |---------|-------|---------|
 | **CLI** | Always on | Type in terminal |
-| **Discord** | Set `DISCORD_TOKEN` in `.env` | DM the bot or @mention |
-| **Telegram** | Set `TELEGRAM_TOKEN` in `.env` | Message the bot |
-| **Slack** | Set `SLACK_*` tokens in `.env` | DM or @mention |
+| **Dashboard** | Always on | http://localhost:18791 |
+| **Discord** | Set `DISCORD_TOKEN` | DM or @mention |
+| **Telegram** | Set `TELEGRAM_TOKEN` | Message the bot |
+| **Slack** | Set `SLACK_*` tokens | DM or @mention |
 
 ## Skills (Commands)
 
@@ -89,6 +93,24 @@ npm run dev
 /report weekly                        — Weekly summary
 ```
 
+### Knowledge Base (RAG)
+```
+/kb ingest                            — Ingest files from ./knowledge/
+/kb list                              — List all documents
+/kb stats                             — Show KB statistics
+/search <query>                       — Search the knowledge base
+```
+
+Place documents (.txt, .md, .json, .csv, .py, .ts, .js, .yaml) in the `./knowledge/` directory.
+
+### Voice
+```
+/voice                                — Record 10s and transcribe
+/voice <seconds>                      — Record custom duration
+```
+
+Requires: `brew install sox` (recording) + `brew install whisper-cpp` (transcription)
+
 ### Other
 ```
 /help                                 — Show all commands
@@ -107,7 +129,7 @@ Any other message is processed by the AI.
 ### Webhook / API
 
 ```bash
-# Send a message via API
+# Chat via API
 curl -X POST http://localhost:18790/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "What are my pending tasks?"}'
@@ -121,6 +143,14 @@ curl -X POST http://localhost:18790/webhook \
 curl http://localhost:18790/health
 ```
 
+### Web Dashboard
+
+Real-time dashboard at **http://localhost:18791** with:
+- Chat interface (WebSocket-powered)
+- Task and reminder panels
+- System status (channels, knowledge base stats)
+- Activity feed
+
 ## Project Structure
 
 ```
@@ -130,8 +160,11 @@ src/
 │   ├── gateway.ts      # Message routing
 │   ├── agent.ts        # LLM orchestration + skill dispatch
 │   ├── session.ts      # SQLite conversation memory
-│   ├── cron.ts         # Scheduled jobs (reminders, briefings)
-│   └── webhook.ts      # HTTP webhook/API server
+│   ├── cron.ts         # Scheduled jobs
+│   ├── webhook.ts      # HTTP webhook/API server
+│   ├── dashboard.ts    # Web dashboard (WebSocket + HTML)
+│   ├── rag.ts          # RAG knowledge base engine
+│   └── voice.ts        # Voice recording + Whisper STT
 ├── channels/
 │   ├── cli.ts          # Terminal interface
 │   ├── discord.ts      # Discord bot
@@ -145,10 +178,13 @@ src/
 │   ├── help.ts         # Help command
 │   ├── scheduler.ts    # Reminder management
 │   ├── task-tracker.ts # Task/todo management
-│   └── report.ts       # Report generation
+│   ├── report.ts       # Report generation
+│   ├── knowledge.ts    # Knowledge base skill
+│   └── voice.ts        # Voice input skill
 ├── utils/
 │   └── logger.ts       # Colored logging
 └── index.ts            # Entry point
+knowledge/              # Place documents here for RAG
 ```
 
 ## Roadmap
@@ -157,7 +193,7 @@ src/
 - [x] Phase 2: Skills (Scheduler, Task Tracker, Report Generator)
 - [x] Phase 3: Multi-Platform (Discord, Telegram, Slack)
 - [x] Phase 4: Automation (Cron, Webhooks, API)
-- [ ] Phase 5: Advanced (Voice, RAG, Web Dashboard)
+- [x] Phase 5: Advanced (Voice, RAG, Web Dashboard)
 
 ## License
 

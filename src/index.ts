@@ -6,6 +6,9 @@ import { Agent } from "./core/agent.js";
 import { SessionStore } from "./core/session.js";
 import { CronScheduler } from "./core/cron.js";
 import { WebhookServer } from "./core/webhook.js";
+import { Dashboard } from "./core/dashboard.js";
+import { VoiceEngine } from "./core/voice.js";
+import { RAGEngine } from "./core/rag.js";
 import { ClaudeCodeProvider } from "./providers/claude-code.js";
 import { OllamaProvider } from "./providers/ollama.js";
 import { CLIChannel } from "./channels/cli.js";
@@ -17,6 +20,8 @@ import { createSchedulerSkill } from "./skills/scheduler.js";
 import { createTaskTrackerSkill } from "./skills/task-tracker.js";
 import { createReportSkill } from "./skills/report.js";
 import { createHelpSkill } from "./skills/help.js";
+import { createKnowledgeSkill } from "./skills/knowledge.js";
+import { createVoiceSkill } from "./skills/voice.js";
 import { log, setLogLevel } from "./utils/logger.js";
 import type { LLMProvider, LogLevel } from "./core/types.js";
 
@@ -70,12 +75,25 @@ async function main() {
   // Agent
   const agent = new Agent(provider, sessionStore);
 
-  // Skills
+  // Core engines
   const skillsDb = new SkillsDB(sessionStore.db);
+  const voiceEngine = new VoiceEngine(provider);
+  const ragEngine = new RAGEngine(
+    sessionStore.db,
+    provider,
+    process.env.KNOWLEDGE_PATH || path.join(PROJECT_ROOT, "knowledge")
+  );
+
+  // Ingest knowledge base on startup
+  await ragEngine.ingestAll();
+
+  // Register skills
   agent.registerSkill(createHelpSkill());
   agent.registerSkill(createSchedulerSkill(skillsDb));
   agent.registerSkill(createTaskTrackerSkill(skillsDb));
   agent.registerSkill(createReportSkill(skillsDb));
+  agent.registerSkill(createKnowledgeSkill(ragEngine));
+  agent.registerSkill(createVoiceSkill(voiceEngine));
 
   // Gateway
   const gateway = new Gateway();
@@ -86,19 +104,19 @@ async function main() {
   const cli = new CLIChannel();
   gateway.registerChannel(cli);
 
-  // Discord (if token provided)
+  // Discord
   if (process.env.DISCORD_TOKEN) {
     const discord = new DiscordChannel(process.env.DISCORD_TOKEN);
     gateway.registerChannel(discord);
   }
 
-  // Telegram (if token provided)
+  // Telegram
   if (process.env.TELEGRAM_TOKEN) {
     const telegram = new TelegramChannel(process.env.TELEGRAM_TOKEN);
     gateway.registerChannel(telegram);
   }
 
-  // Slack (if tokens provided)
+  // Slack
   if (process.env.SLACK_BOT_TOKEN && process.env.SLACK_SIGNING_SECRET) {
     const slack = new SlackChannel(
       process.env.SLACK_BOT_TOKEN,
@@ -115,6 +133,8 @@ async function main() {
     await gateway.sendResponse(msg.channelId, msg.sessionId, response);
   });
 
+  // --- Automation ---
+
   // Cron scheduler
   const cronScheduler = new CronScheduler(gateway, skillsDb);
   cronScheduler.start();
@@ -124,16 +144,24 @@ async function main() {
   const webhookServer = new WebhookServer(agent, gateway, webhookPort);
   await webhookServer.start();
 
+  // Dashboard
+  const dashboardPort = parseInt(process.env.DASHBOARD_PORT || "18791");
+  const dashboard = new Dashboard(agent, gateway, skillsDb, ragEngine, dashboardPort);
+  await dashboard.start();
+
   // Start all channels
   await gateway.startAll();
 
   log.info("AIMED Secretary is ready!");
   log.info(`Channels: ${gateway.listChannels().join(", ")}`);
+  log.info(`Dashboard: http://localhost:${dashboardPort}`);
+  log.info(`Webhook API: http://localhost:${webhookPort}`);
 
   // Graceful shutdown
   const shutdown = async () => {
     log.info("Shutting down...");
     cronScheduler.stop();
+    await dashboard.stop();
     await webhookServer.stop();
     await gateway.stopAll();
     sessionStore.close();
