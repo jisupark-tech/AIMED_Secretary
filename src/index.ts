@@ -7,6 +7,10 @@ import { SessionStore } from "./core/session.js";
 import { ClaudeCodeProvider } from "./providers/claude-code.js";
 import { OllamaProvider } from "./providers/ollama.js";
 import { CLIChannel } from "./channels/cli.js";
+import { SkillsDB } from "./skills/skills-db.js";
+import { createSchedulerSkill } from "./skills/scheduler.js";
+import { createTaskTrackerSkill } from "./skills/task-tracker.js";
+import { createReportSkill } from "./skills/report.js";
 import { log, setLogLevel } from "./utils/logger.js";
 import type { LLMProvider, LogLevel } from "./core/types.js";
 
@@ -59,6 +63,12 @@ async function main() {
 
   // Agent
   const agent = new Agent(provider, sessionStore);
+
+  // Skills
+  const skillsDb = new SkillsDB(sessionStore.db);
+  agent.registerSkill(createSchedulerSkill(skillsDb));
+  agent.registerSkill(createTaskTrackerSkill(skillsDb));
+  agent.registerSkill(createReportSkill(skillsDb));
 
   // Gateway
   const gateway = new Gateway();

@@ -3,7 +3,7 @@ import type { Message, Session } from "./types.js";
 import { log } from "../utils/logger.js";
 
 export class SessionStore {
-  private db: Database.Database;
+  readonly db: Database.Database;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
