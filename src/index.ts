@@ -4,13 +4,19 @@ import { fileURLToPath } from "node:url";
 import { Gateway } from "./core/gateway.js";
 import { Agent } from "./core/agent.js";
 import { SessionStore } from "./core/session.js";
+import { CronScheduler } from "./core/cron.js";
+import { WebhookServer } from "./core/webhook.js";
 import { ClaudeCodeProvider } from "./providers/claude-code.js";
 import { OllamaProvider } from "./providers/ollama.js";
 import { CLIChannel } from "./channels/cli.js";
+import { DiscordChannel } from "./channels/discord.js";
+import { TelegramChannel } from "./channels/telegram.js";
+import { SlackChannel } from "./channels/slack.js";
 import { SkillsDB } from "./skills/skills-db.js";
 import { createSchedulerSkill } from "./skills/scheduler.js";
 import { createTaskTrackerSkill } from "./skills/task-tracker.js";
 import { createReportSkill } from "./skills/report.js";
+import { createHelpSkill } from "./skills/help.js";
 import { log, setLogLevel } from "./utils/logger.js";
 import type { LLMProvider, LogLevel } from "./core/types.js";
 
@@ -66,6 +72,7 @@ async function main() {
 
   // Skills
   const skillsDb = new SkillsDB(sessionStore.db);
+  agent.registerSkill(createHelpSkill());
   agent.registerSkill(createSchedulerSkill(skillsDb));
   agent.registerSkill(createTaskTrackerSkill(skillsDb));
   agent.registerSkill(createReportSkill(skillsDb));
@@ -73,9 +80,34 @@ async function main() {
   // Gateway
   const gateway = new Gateway();
 
-  // CLI Channel
+  // --- Channels ---
+
+  // CLI (always enabled)
   const cli = new CLIChannel();
   gateway.registerChannel(cli);
+
+  // Discord (if token provided)
+  if (process.env.DISCORD_TOKEN) {
+    const discord = new DiscordChannel(process.env.DISCORD_TOKEN);
+    gateway.registerChannel(discord);
+  }
+
+  // Telegram (if token provided)
+  if (process.env.TELEGRAM_TOKEN) {
+    const telegram = new TelegramChannel(process.env.TELEGRAM_TOKEN);
+    gateway.registerChannel(telegram);
+  }
+
+  // Slack (if tokens provided)
+  if (process.env.SLACK_BOT_TOKEN && process.env.SLACK_SIGNING_SECRET) {
+    const slack = new SlackChannel(
+      process.env.SLACK_BOT_TOKEN,
+      process.env.SLACK_SIGNING_SECRET,
+      process.env.SLACK_APP_TOKEN || "",
+      parseInt(process.env.SLACK_PORT || "3100")
+    );
+    gateway.registerChannel(slack);
+  }
 
   // Wire gateway messages to agent
   gateway.on("message", async (msg) => {
@@ -83,12 +115,26 @@ async function main() {
     await gateway.sendResponse(msg.channelId, msg.sessionId, response);
   });
 
-  // Start
+  // Cron scheduler
+  const cronScheduler = new CronScheduler(gateway, skillsDb);
+  cronScheduler.start();
+
+  // Webhook server
+  const webhookPort = parseInt(process.env.WEBHOOK_PORT || "18790");
+  const webhookServer = new WebhookServer(agent, gateway, webhookPort);
+  await webhookServer.start();
+
+  // Start all channels
   await gateway.startAll();
+
+  log.info("AIMED Secretary is ready!");
+  log.info(`Channels: ${gateway.listChannels().join(", ")}`);
 
   // Graceful shutdown
   const shutdown = async () => {
     log.info("Shutting down...");
+    cronScheduler.stop();
+    await webhookServer.stop();
     await gateway.stopAll();
     sessionStore.close();
     process.exit(0);
