@@ -17,9 +17,9 @@ export function createTaskTrackerSkill(db: SkillsDB): Skill {
       const input = msg.content.trim();
       const sessionId = msg.sessionId;
 
-      // /tasks — list all pending
+      // /tasks — list pending only
       if (/^\/(tasks?|todos?)\s*$/i.test(input)) {
-        return listTasks(db, sessionId);
+        return listTasks(db, sessionId, "pending");
       }
 
       // /tasks all — list all including done
